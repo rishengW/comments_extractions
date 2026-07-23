@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+outputs/*.csv
+outputs/*.json
+data/selenium_profile/
+data/selenium_trip_profile/

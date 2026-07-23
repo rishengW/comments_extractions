@@ -1,0 +1,109 @@
+{
+  "retrieved_at": "2026-07-21",
+  "privacy": "Usernames, profile links, avatars, and supplier responses excluded",
+  "totals": {
+    "tiktok_comment_records": 205,
+    "tiktok_source_videos": 16,
+    "trip_product_reviews": 208,
+    "trip_products": 8,
+    "canonical_raw_records": 413
+  },
+  "datasets": [
+    {
+      "source": "tiktok",
+      "path": "data/raw/tiktok_comments_aggregate.jsonl",
+      "records_captured": 205
+    },
+    {
+      "source": "trip.com",
+      "path": "data/raw/trip_product_reviews_aggregate.jsonl",
+      "records_captured": 208
+    }
+  ],
+  "queries": [
+    {
+      "source": "tiktok",
+      "term": "#ChinaTravel",
+      "records_captured": 195,
+      "source_videos": 14
+    },
+    {
+      "source": "tiktok",
+      "term": "#ExploreChina",
+      "records_captured": 6,
+      "source_videos": 1
+    },
+    {
+      "source": "tiktok",
+      "term": "#TravelChina",
+      "records_captured": 4,
+      "source_videos": 1
+    },
+    {
+      "source": "trip.com",
+      "term": "Shanghai tour",
+      "records_captured": 104,
+      "products": 3
+    },
+    {
+      "source": "trip.com",
+      "term": "Shanghai day tour",
+      "records_captured": 103,
+      "products": 4
+    },
+    {
+      "source": "trip.com",
+      "term": "Shanghai guide service",
+      "records_captured": 1,
+      "products": 1
+    },
+    {
+      "source": "trip.com",
+      "term": "Shanghai Pass",
+      "records_captured": 0,
+      "note": "Indexed listings redirected to a live locale catalogue without exposed pass-review text"
+    }
+  ],
+  "trip_products": [
+    {
+      "product_id": "89197985",
+      "records_captured": 102,
+      "source_url": "https://sg.trip.com/things-to-do/detail/89197985/"
+    },
+    {
+      "product_id": "61487366",
+      "records_captured": 47,
+      "source_url": "https://sg.trip.com/things-to-do/detail/61487366/"
+    },
+    {
+      "product_id": "100455678",
+      "records_captured": 43,
+      "source_url": "https://sg.trip.com/things-to-do/detail/100455678/"
+    },
+    {
+      "product_id": "96471129",
+      "records_captured": 10,
+      "source_url": "https://sg.trip.com/things-to-do/detail/96471129/"
+    },
+    {
+      "product_id": "88901396",
+      "records_captured": 3,
+      "source_url": "https://sg.trip.com/things-to-do/detail/88901396/"
+    },
+    {
+      "product_id": "92336446",
+      "records_captured": 1,
+      "source_url": "https://sg.trip.com/things-to-do/detail/92336446/"
+    },
+    {
+      "product_id": "105312129",
+      "records_captured": 1,
+      "source_url": "https://sg.trip.com/things-to-do/detail/105312129/"
+    },
+    {
+      "product_id": "93817146",
+      "records_captured": 1,
+      "source_url": "https://sg.trip.com/things-to-do/detail/93817146/"
+    }
+  ]
+}
