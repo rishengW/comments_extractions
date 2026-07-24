@@ -83,10 +83,17 @@ VERIFICATION_SELECTORS = (
 TIKTOK_COMMENT_BUTTON_SELECTOR = (
     'button[aria-label^="Read or add comments"], '
     'button[data-e2e="comment-icon"], '
-    '[role="button"][data-e2e="comment-icon"]'
+    '[role="button"][data-e2e="comment-icon"], '
+    '[data-e2e="comment-icon"], '
+    'button[aria-label*="comment" i], '
+    '[role="button"][aria-label*="comment" i]'
 )
 TIKTOK_COMMENT_CARD_SELECTOR = (
-    'div[class*="DivCommentItemWrapper"], div[data-e2e="comment-level-1"]'
+    'div[class*="DivCommentItemWrapper"], '
+    'div[class*="DivCommentItemContainer"], '
+    'div[data-e2e="comment-level-1"], '
+    'div[data-e2e="comment-item"], '
+    'div[data-testid*="comment-item"]'
 )
 TIKTOK_EMPTY_COMMENT_MARKERS = (
     "comments are turned off",
@@ -506,7 +513,15 @@ def _tiktok_card_payloads(driver: Any) -> list[dict[str, str]]:
     """Read visible comment text atomically; comment images are never inspected."""
     payloads = driver.execute_script(
         """
-        const cards = [...document.querySelectorAll(arguments[0])];
+        const cards = [...document.querySelectorAll(arguments[0])]
+          .filter((card) => {
+            const style = window.getComputedStyle(card);
+            return (
+              style.display !== 'none' &&
+              style.visibility !== 'hidden' &&
+              card.getClientRects().length > 0
+            );
+          });
         return cards.map((card) => {
           const oldWrapper = card.querySelector(
             'div[class*="DivCommentContentWrapper"]'
@@ -536,6 +551,254 @@ def _tiktok_card_payloads(driver: Any) -> list[dict[str, str]]:
     return [payload for payload in (payloads or []) if isinstance(payload, dict)]
 
 
+def _tiktok_comment_button(driver: Any) -> Any:
+    return driver.execute_script(
+        r"""
+        const visible = (element) => {
+          const style = window.getComputedStyle(element);
+          return (
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            element.getClientRects().length > 0
+          );
+        };
+        const normalizePath = (value) => {
+          try {
+            return new URL(value, location.href).pathname.replace(/\/+$/, '');
+          } catch {
+            return '';
+          }
+        };
+        const currentVideoPath = normalizePath(location.href);
+        const mainVideo = [...document.querySelectorAll('video')]
+          .filter(visible)
+          .sort((left, right) => {
+            const leftRect = left.getBoundingClientRect();
+            const rightRect = right.getBoundingClientRect();
+            return (
+              rightRect.width * rightRect.height -
+              leftRect.width * leftRect.height
+            );
+          })[0];
+        const mainVideoRoot = mainVideo?.closest(
+          '[data-e2e="browse-video"], [data-e2e="video-detail"], article'
+        );
+        const mainVideoRect = mainVideo?.getBoundingClientRect();
+        const domDistance = (left, right) => {
+          if (!left || !right) return 100;
+          const leftAncestors = new Map();
+          let current = left;
+          for (let depth = 0; current && depth < 15; depth += 1) {
+            leftAncestors.set(current, depth);
+            current = current.parentElement;
+          }
+          current = right;
+          for (let depth = 0; current && depth < 15; depth += 1) {
+            if (leftAncestors.has(current)) {
+              return depth + leftAncestors.get(current);
+            }
+            current = current.parentElement;
+          }
+          return 100;
+        };
+        const ownerVideoPath = (element) => {
+          let current = element.parentElement;
+          for (let depth = 0; current && depth < 3; depth += 1) {
+            const paths = [...new Set(
+              [...current.querySelectorAll('a[href*="/video/"]')]
+                .map((link) => normalizePath(link.href))
+                .filter(Boolean)
+            )];
+            if (paths.includes(currentVideoPath)) return currentVideoPath;
+            if (paths.length === 1) return paths[0];
+            current = current.parentElement;
+          }
+          return '';
+        };
+        const candidates = [...document.querySelectorAll(arguments[0])]
+          .filter((element) => {
+            const label = (element.getAttribute('aria-label') || '')
+              .trim().toLowerCase();
+            return visible(element) && !/^(close|hide|collapse)\b/.test(label);
+          })
+          .map((element) => {
+            const label = (element.getAttribute('aria-label') || '').toLowerCase();
+            const ownerPath = ownerVideoPath(element);
+            let recommendationAncestor = false;
+            let current = element.parentElement;
+            for (let depth = 0; current && depth < 3; depth += 1) {
+              const identity = [
+                current.id,
+                current.className,
+                current.getAttribute('data-e2e'),
+                current.getAttribute('aria-label'),
+              ].filter(Boolean).join(' ');
+              if (/recommend|related|suggest|you.?may.?like/i.test(identity)) {
+                recommendationAncestor = true;
+                break;
+              }
+              current = current.parentElement;
+            }
+            let score = 0;
+            if (/^read or add comments/i.test(label)) score += 200;
+            if (element.getAttribute('data-e2e') === 'comment-icon') score += 100;
+            if (label.includes('comment')) score += 50;
+            if (ownerPath === currentVideoPath) score += 500;
+            if (ownerPath && ownerPath !== currentVideoPath) score -= 2000;
+            if (recommendationAncestor) score -= 1000;
+            if (mainVideoRoot?.contains(element)) score += 1000;
+            if (mainVideo) {
+              score += Math.max(0, 800 - domDistance(mainVideo, element) * 60);
+            }
+            if (mainVideoRect) {
+              const rect = element.getBoundingClientRect();
+              const distance = Math.hypot(
+                rect.x + rect.width / 2 -
+                  (mainVideoRect.x + mainVideoRect.width / 2),
+                rect.y + rect.height / 2 -
+                  (mainVideoRect.y + mainVideoRect.height / 2)
+              );
+              score -= distance / 10;
+            }
+            return {element, score};
+          })
+          .sort((left, right) => right.score - left.score);
+        return candidates[0]?.element || null;
+        """,
+        TIKTOK_COMMENT_BUTTON_SELECTOR,
+    )
+
+
+def _tiktok_comments_tab(driver: Any) -> Any:
+    return driver.execute_script(
+        r"""
+        const visible = (element) => {
+          const style = window.getComputedStyle(element);
+          return (
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            element.getClientRects().length > 0
+          );
+        };
+        const commentsLabel = (element) => {
+          const text = (
+            element.getAttribute('aria-label') ||
+            element.innerText ||
+            element.textContent ||
+            ''
+          )
+            .replace(/\s+/g, ' ')
+            .trim();
+          return (
+            /^comments?(?:\s*[([]?\s*[\d,.]+[kmb]?\s*[)\]]?)?$/i.test(text) ||
+            /^[\d,.]+[kmb]?\s+comments?$/i.test(text)
+          );
+        };
+        const clickableAncestor = (element) => {
+          const semantic = element.closest(
+            'button, [role="tab"], [role="button"]'
+          );
+          if (semantic) return semantic;
+          let current = element;
+          for (let depth = 0; current && depth < 3; depth += 1) {
+            const style = window.getComputedStyle(current);
+            if (
+              style.cursor === 'pointer' ||
+              current.hasAttribute('tabindex') ||
+              current.onclick
+            ) return current;
+            current = current.parentElement;
+          }
+          return element.parentElement || element;
+        };
+        const candidates = [
+          ...document.querySelectorAll(
+            'button, [role="tab"], [role="button"], div, span'
+          ),
+        ]
+          .filter((element) => visible(element) && commentsLabel(element))
+          .map((element) => {
+            const clickable = clickableAncestor(element);
+            const role = clickable.getAttribute('role') || '';
+            let score = 0;
+            if (role === 'tab') score += 500;
+            if (clickable.closest('[role="tablist"]')) score += 500;
+            if (clickable.tagName === 'BUTTON') score += 200;
+            if (role === 'button') score += 100;
+            if (/comment/i.test(clickable.getAttribute('data-e2e') || '')) {
+              score += 50;
+            }
+            const rect = clickable.getBoundingClientRect();
+            if (rect.width > 0 && rect.width < 500 && rect.height < 200) {
+              score += 25;
+            }
+            const nearbyText = (
+              clickable.parentElement?.innerText || ''
+            ).replace(/\s+/g, ' ');
+            if (/you may like/i.test(nearbyText)) score += 600;
+            const actionLabel = (
+              clickable.getAttribute('aria-label') || ''
+            ).toLowerCase();
+            if (/read or add comments|open comments/.test(actionLabel)) {
+              score -= 1000;
+            }
+            return {element: clickable, score};
+          })
+          .sort((left, right) => right.score - left.score);
+        return candidates[0]?.element || null;
+        """
+    )
+
+
+def _tiktok_panel_summary(driver: Any) -> str:
+    try:
+        snapshot = driver.execute_script(
+            r"""
+            const visible = (element) => {
+              const style = window.getComputedStyle(element);
+              return (
+                style.display !== 'none' &&
+                style.visibility !== 'hidden' &&
+                element.getClientRects().length > 0
+              );
+            };
+            const labels = [
+              ...document.querySelectorAll(
+                '[role="tab"], [role="tablist"], button, [role="button"], '
+                + '[aria-label], [data-e2e]'
+              ),
+            ]
+              .filter((element) => {
+                if (!visible(element)) return false;
+                const value = [
+                  element.innerText,
+                  element.getAttribute('aria-label'),
+                  element.getAttribute('data-e2e'),
+                ].filter(Boolean).join(' ');
+                return /comment|you may like/i.test(value);
+              })
+              .slice(0, 12)
+              .map((element) => ({
+                text: (element.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+                aria: element.getAttribute('aria-label') || '',
+                role: element.getAttribute('role') || '',
+                e2e: element.getAttribute('data-e2e') || '',
+                cls: String(element.className || '').slice(0, 100),
+              }));
+            const cards = [...document.querySelectorAll(arguments[0])];
+            return {
+              card_count: cards.length,
+              visible_card_count: cards.filter(visible).length,
+              labels,
+            };
+            """,
+            TIKTOK_COMMENT_CARD_SELECTOR,
+        )
+        return json.dumps(snapshot or {}, ensure_ascii=True, separators=(",", ":"))
+    except Exception as error:
+        return f"unavailable:{type(error).__name__}"
+
+
 def _tiktok_card_signature(
     payloads: Iterable[dict[str, str]],
 ) -> tuple[tuple[str, str], ...]:
@@ -545,6 +808,78 @@ def _tiktok_card_signature(
             str(payload.get("date_text") or "").strip(),
         )
         for payload in payloads
+    )
+
+
+def _scroll_tiktok_comments(driver: Any) -> str:
+    return str(
+        driver.execute_script(
+            r"""
+            const visible = (element) => {
+              const style = window.getComputedStyle(element);
+              return (
+                style.display !== 'none' &&
+                style.visibility !== 'hidden' &&
+                element.getClientRects().length > 0
+              );
+            };
+            const canScroll = (element) => (
+              visible(element) && element.scrollHeight > element.clientHeight + 2
+            );
+            const cards = [...document.querySelectorAll(arguments[0])]
+              .filter(visible);
+            const lastCard = cards.at(-1);
+            let container;
+            if (lastCard) {
+              for (
+                let current = lastCard.parentElement;
+                current && current !== document.body;
+                current = current.parentElement
+              ) {
+                if (canScroll(current)) {
+                  container = current;
+                  break;
+                }
+              }
+            }
+            if (!container) {
+              const explicitCandidates = [
+                ...document.querySelectorAll(
+                  'div[class*="DivCommentListContainer"], '
+                  + 'div[class*="DivCommentListWrapper"], '
+                  + '[data-e2e="comment-list"], '
+                  + '[class*="CommentList"], [class*="comment-list"]'
+                ),
+              ];
+              container = explicitCandidates.find(
+                (candidate) => canScroll(candidate) &&
+                  (!lastCard || candidate.contains(lastCard))
+              );
+            }
+            if (container) {
+              const previous = container.scrollTop;
+              const distance = Math.max(600, container.clientHeight * 0.85);
+              container.scrollTop = Math.min(
+                container.scrollHeight,
+                previous + distance
+              );
+              if (container.scrollTop === previous) {
+                container.scrollTop = container.scrollHeight;
+              }
+              container.dispatchEvent(new Event('scroll', {bubbles: true}));
+              const label =
+                container.getAttribute('data-e2e') ||
+                [...container.classList].find((value) => /comment/i.test(value)) ||
+                container.tagName.toLowerCase();
+              return `container:${label}`;
+            }
+            if (lastCard) lastCard.scrollIntoView({block: 'end'});
+            window.scrollBy(0, 900);
+            return lastCard ? 'page:last-comment' : 'page:no-comment-card';
+            """,
+            TIKTOK_COMMENT_CARD_SELECTOR,
+        )
+        or ""
     )
 
 
@@ -601,7 +936,7 @@ def scrape_tiktok_video_comments(
     verification_wait_seconds: int = 0,
 ) -> list[dict[str, object]]:
     """Collect public top-level comments, scrolling until stable or at the limit."""
-    _, TimeoutException, _, By, EC, WebDriverWait = _selenium()
+    _, TimeoutException, _, _, _, WebDriverWait = _selenium()
     from selenium.common.exceptions import (
         ElementClickInterceptedException,
         StaleElementReferenceException,
@@ -612,39 +947,51 @@ def scrape_tiktok_video_comments(
     def comment_entrypoint(current: Any) -> tuple[str, list[Any]] | bool:
         state = current.execute_script(
             """
-            if (document.querySelector(arguments[0])) return 'cards';
+            const visible = (element) => {
+              const style = window.getComputedStyle(element);
+              return (
+                style.display !== 'none' &&
+                style.visibility !== 'hidden' &&
+                element.getClientRects().length > 0
+              );
+            };
+            const cards = [...document.querySelectorAll(arguments[0])]
+              .filter(visible);
+            if (cards.length) return 'cards';
             const emptyMarkers = arguments[1];
             const emptyState = [...document.querySelectorAll('div, p, span')]
               .some((element) => {
-                const style = window.getComputedStyle(element);
-                if (
-                  style.display === 'none' ||
-                  style.visibility === 'hidden' ||
-                  element.getClientRects().length === 0
-                ) return false;
+                if (!visible(element)) return false;
                 const text = (element.innerText || '').trim().toLowerCase();
                 return emptyMarkers.some((marker) => text.includes(marker));
               });
             if (emptyState) return 'empty';
-            if (document.querySelector(arguments[2])) return 'button';
             return '';
             """,
             TIKTOK_COMMENT_CARD_SELECTOR,
             list(TIKTOK_EMPTY_COMMENT_MARKERS),
-            TIKTOK_COMMENT_BUTTON_SELECTOR,
         )
-        return (state, []) if state else False
+        if state:
+            return (state, [])
+        return ("button", []) if _tiktok_comment_button(current) else False
 
     def comment_content(current: Any) -> tuple[str, list[Any]] | bool:
         state = comment_entrypoint(current)
         return state if state and state[0] in {"cards", "empty"} else False
 
-    entrypoint = _wait_for_tiktok_ui(
-        driver,
-        comment_entrypoint,
-        "comments control",
-        verification_wait_seconds,
-    )
+    try:
+        entrypoint = _wait_for_tiktok_ui(
+            driver,
+            comment_entrypoint,
+            "comments control",
+            verification_wait_seconds,
+        )
+    except TikTokPageError:
+        _log(
+            f"TikTok: entrypoint diagnostics for {video_url}: "
+            f"{_tiktok_panel_summary(driver)}"
+        )
+        raise
     entrypoint_kind, _ = entrypoint
     if entrypoint_kind == "empty":
         _log(f"TikTok: no public text comments available for {video_url}")
@@ -652,15 +999,11 @@ def scrape_tiktok_video_comments(
     if entrypoint_kind == "button":
 
         def clickable_comment_button(current: Any) -> Any:
-            for button in current.find_elements(
-                By.CSS_SELECTOR, TIKTOK_COMMENT_BUTTON_SELECTOR
-            ):
-                try:
-                    if button.is_displayed() and button.is_enabled():
-                        return button
-                except StaleElementReferenceException:
-                    continue
-            return False
+            try:
+                button = _tiktok_comment_button(current)
+                return button if button and button.is_enabled() else False
+            except StaleElementReferenceException:
+                return False
 
         last_click_error: Exception | None = None
         for attempt in range(3):
@@ -689,29 +1032,52 @@ def scrape_tiktok_video_comments(
             raise TikTokPageError(
                 "TikTok comments control kept changing while it was being clicked."
             ) from last_click_error
-        try:
-            comments_tab = WebDriverWait(driver, 4).until(
-                EC.element_to_be_clickable(
-                    (By.XPATH, '//button[normalize-space()="Comments"]')
+        if not comment_content(driver):
+            try:
+                comments_tab = WebDriverWait(driver, 5).until(_tiktok_comments_tab)
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block: 'center'});", comments_tab
                 )
-            )
-            comments_tab.click()
-        except (
-            TimeoutException,
-            StaleElementReferenceException,
-            ElementClickInterceptedException,
-        ):
-            pass
+                try:
+                    comments_tab.click()
+                except ElementClickInterceptedException:
+                    driver.execute_script("arguments[0].click();", comments_tab)
+                _log("TikTok: activated Comments tab")
+            except (TimeoutException, StaleElementReferenceException):
+                pass
 
-        comment_result = _wait_for_tiktok_ui(
-            driver,
-            comment_content,
-            "comment cards or empty state",
-            verification_wait_seconds,
-        )
+        try:
+            comment_result = _wait_for_tiktok_ui(
+                driver,
+                comment_content,
+                "comment cards or empty state",
+                verification_wait_seconds,
+            )
+        except TikTokPageError:
+            _log(
+                f"TikTok: panel diagnostics for {video_url}: "
+                f"{_tiktok_panel_summary(driver)}"
+            )
+            raise
         if comment_result[0] == "empty":
             _log(f"TikTok: no public text comments available for {video_url}")
             return []
+        if not _tiktok_card_payloads(driver):
+            try:
+                comments_tab = _tiktok_comments_tab(driver)
+                if comments_tab:
+                    comments_tab.click()
+                    _log("TikTok: reactivated Comments tab")
+                WebDriverWait(driver, 5).until(_tiktok_card_payloads)
+            except (
+                TimeoutException,
+                StaleElementReferenceException,
+                ElementClickInterceptedException,
+            ) as error:
+                raise TikTokPageError(
+                    "TikTok comment cards disappeared after activating the Comments tab "
+                    f"(panel={_tiktok_panel_summary(driver)})."
+                ) from error
 
     metadata = _tiktok_metadata(driver, video_url)
     rows: list[dict[str, object]] = []
@@ -739,19 +1105,9 @@ def scrape_tiktok_video_comments(
         )
         if len(rows) >= max_comments:
             break
-        driver.execute_script(
-            r"""
-            const container = document.querySelector(
-              'div[class*="DivCommentListContainer"], [data-e2e="comment-list"]'
-            );
-            if (container) {
-              container.scrollTop = container.scrollHeight;
-              container.dispatchEvent(new Event('scroll', {bubbles: true}));
-            } else {
-              window.scrollBy(0, 900);
-            }
-            """
-        )
+        scroll_target = _scroll_tiktok_comments(driver)
+        if scroll_rounds == 0:
+            _log(f"TikTok: automatic comment scroll target: {scroll_target}")
         scroll_rounds += 1
         try:
             WebDriverWait(driver, 4).until(

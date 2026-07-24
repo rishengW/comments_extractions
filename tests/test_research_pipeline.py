@@ -340,6 +340,94 @@ def test_tiktok_scroll_progress_uses_dom_signature_not_parsed_row_count():
     assert _tiktok_card_signature(before) != _tiktok_card_signature(after)
 
 
+def test_tiktok_comment_scroller_finds_current_dynamic_container():
+    class Driver:
+        script = ""
+        selector = ""
+
+        def execute_script(self, script, selector):
+            self.script = script
+            self.selector = selector
+            return "container:DivCommentListWrapper"
+
+    driver = Driver()
+
+    target = selenium_collectors._scroll_tiktok_comments(driver)
+
+    assert target == "container:DivCommentListWrapper"
+    assert "DivCommentItemContainer" in driver.selector
+    assert 'data-e2e="comment-item"' in driver.selector
+    assert "scrollHeight > element.clientHeight" in driver.script
+    assert "lastCard.parentElement" in driver.script
+    assert driver.script.index("lastCard.parentElement") < driver.script.index(
+        "explicitCandidates.find"
+    )
+
+
+def test_tiktok_comment_button_rejects_recommendation_video_controls():
+    sentinel = object()
+
+    class Driver:
+        script = ""
+        selector = ""
+
+        def execute_script(self, script, selector):
+            self.script = script
+            self.selector = selector
+            return sentinel
+
+    driver = Driver()
+
+    button = selenium_collectors._tiktok_comment_button(driver)
+
+    assert button is sentinel
+    assert 'data-e2e="comment-icon"' in driver.selector
+    assert "ownerPath && ownerPath !== currentVideoPath" in driver.script
+    assert "recommend|related|suggest|you.?may.?like" in driver.script
+    assert "mainVideoRoot?.contains(element)" in driver.script
+    assert "domDistance(mainVideo, element)" in driver.script
+    assert "candidates[0]?.element || null" in driver.script
+
+
+def test_tiktok_comments_tab_supports_counted_non_button_tabs():
+    sentinel = object()
+
+    class Driver:
+        script = ""
+
+        def execute_script(self, script):
+            self.script = script
+            return sentinel
+
+    driver = Driver()
+
+    tab = selenium_collectors._tiktok_comments_tab(driver)
+
+    assert tab is sentinel
+    assert '[role="tab"]' in driver.script
+    assert "^comments?" in driver.script
+    assert "clickableAncestor" in driver.script
+    assert "[\\d,.]+[kmb]?" in driver.script
+    assert "you may like" in driver.script.lower()
+    assert 'role="tablist"' in driver.script
+
+
+def test_tiktok_panel_summary_reports_visible_labels_and_cards():
+    class Driver:
+        def execute_script(self, _script, selector):
+            assert "DivCommentItem" in selector
+            return {
+                "card_count": 2,
+                "visible_card_count": 0,
+                "labels": [{"text": "You may like", "role": "tab"}],
+            }
+
+    summary = selenium_collectors._tiktok_panel_summary(Driver())
+
+    assert '"visible_card_count":0' in summary
+    assert '"You may like"' in summary
+
+
 def test_collector_parser_accepts_public_review_markup():
     # The live collector is network-bound; parser behavior is covered by the
     # checked-in public seed export and the analysis integration test below.
