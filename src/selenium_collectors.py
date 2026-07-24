@@ -870,7 +870,11 @@ def _trip_product_signature(
 def _trip_review_card_payloads(driver: Any) -> list[dict[str, str]]:
     payloads = driver.execute_script(
         """
-        return [...document.querySelectorAll(arguments[0])].map((card) => {
+        const fullReviewCards = [...document.querySelectorAll(arguments[3])];
+        const cards = fullReviewCards.length
+          ? fullReviewCards
+          : [...document.querySelectorAll(arguments[0])];
+        return cards.map((card) => {
           const contentNode = card.querySelector(arguments[1]);
           const dateNode = card.querySelector(arguments[2]);
           return {
@@ -884,6 +888,7 @@ def _trip_review_card_payloads(driver: Any) -> list[dict[str, str]]:
         TRIP_REVIEW_CARD_SELECTOR,
         TRIP_REVIEW_CONTENT_SELECTOR,
         TRIP_REVIEW_DATE_SELECTOR,
+        TRIP_FULL_REVIEW_CARD_SELECTOR,
     )
     return [payload for payload in (payloads or []) if isinstance(payload, dict)]
 
@@ -1111,11 +1116,11 @@ def scrape_trip_product_reviews(
     rating = driver.execute_script(
         """
         return (
+          document.querySelector('[class*="detail_review-score-score"]')?.innerText ||
+          document.querySelector('[class*="review_section_score_value"]')?.innerText ||
           document.querySelector(
-            '[class*="detail_review-score-score"], '
-            + '[class*="review_section_score_value"], [class*="comment_score"]'
-          )
-            ?.innerText || ''
+            '[testid="productdetail-productInfo-commentScore"]'
+          )?.innerText || ''
         ).trim();
         """
     )

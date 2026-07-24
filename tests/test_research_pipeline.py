@@ -326,6 +326,7 @@ def test_trip_review_payloads_support_current_text_only_markup():
     assert "detail_review-card-outer" in driver.selectors[0]
     assert "detail_review-card-bottom" in driver.selectors[1]
     assert "detail_review" in driver.selectors[2]
+    assert "ct-review-list-item" in driver.selectors[3]
     assert "img" not in driver.script.lower()
 
 

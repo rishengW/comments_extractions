@@ -27,19 +27,35 @@ python -m src.collectors --country us --app-id 681752345 --max-reviews 20
 
 This writes `data/raw/trip_app_store_reviews.jsonl` when explicitly run. The checked-in App Store pilot is kept under `data/optional/`; app-store reviews are not treated as China-tour product reviews.
 
-For public TikTok comments and relevant Trip.com product reviews, use the Selenium collector:
+Use the Selenium collector separately for each platform.
+
+### Extract TikTok comments only
 
 ```powershell
-python -m src.selenium_collectors --target-per-source 200 --max-comments-per-video 50 --max-reviews-per-product 50 --headed
+python -m src.selenium_collectors `
+  --source tiktok `
+  --target-per-source 5000 `
+  --max-videos-per-tag 50 `
+  --max-comments-per-video 50 `
+  --headed
 ```
 
-To collect only Trip.com product reviews, select the Trip.com source explicitly:
+TikTok comments are written to `data/raw/tiktok_comments_aggregate.jsonl`.
+
+### Extract Trip.com product reviews only
 
 ```powershell
-python -m src.selenium_collectors --source trip --target-per-source 5000 --max-products-per-category 60 --max-reviews-per-product 50 --headed
+python -m src.selenium_collectors `
+  --source trip `
+  --target-per-source 5000 `
+  --max-products-per-category 60 `
+  --max-reviews-per-product 50 `
+  --headed
 ```
 
-`--source` accepts `all` (the default), `tiktok`, or `trip`. `--target-per-source` sets the desired total for each selected source. `--max-comments-per-video` and `--max-reviews-per-product` cap how many records can come from one video or product. The defaults cover the verified targets in `RESEARCH_SCOPE.md`. Supply additional targets as `--tiktok-target "#ChinaTravel=https://..."` or `--trip-target "Shanghai tour=https://..."`.
+Trip.com reviews are written to `data/raw/trip_product_reviews_aggregate.jsonl`.
+
+`--source` accepts `all` (the default), `tiktok`, or `trip`. `--target-per-source` is the desired cumulative total for the selected source, including records already saved in the aggregate output. `--max-comments-per-video` and `--max-reviews-per-product` cap how many records can come from one video or product. Supply additional targets as `--tiktok-target "#ChinaTravel=https://..."` or `--trip-target "Shanghai tour=https://..."`.
 
 Trip-only runs automatically use `data/selenium_trip_profile/`, separate from TikTok's persistent browser profile. Override it with `--profile-dir PATH` when needed.
 
