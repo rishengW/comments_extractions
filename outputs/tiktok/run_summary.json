@@ -1,0 +1,28 @@
+{
+  "input_records": 10261,
+  "retained_records": 6596,
+  "topic_count": 8,
+  "nvivo_sample_records": 6596,
+  "sources": {
+    "tiktok_comment": 6596
+  },
+  "sentiment": {
+    "neutral": 3949,
+    "positive": 2198,
+    "negative": 449
+  },
+  "preprocessing": {
+    "tokenizer": "nltk.word_tokenize(preserve_line=True)",
+    "stopwords": "language-matched nltk.corpus.stopwords where available",
+    "filters": [
+      "duplicate",
+      "advertisement",
+      "emoji-or-symbol-only",
+      "mechanically-repeated-or-bot-like",
+      "below-minimum-length",
+      "non-target-language"
+    ]
+  },
+  "topic_model": "scikit-learn LatentDirichletAllocation",
+  "sentiment_model": "VADER with deterministic lexicon fallback"
+}
